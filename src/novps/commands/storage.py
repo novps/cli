@@ -21,6 +21,6 @@ def list_storage(
 ) -> None:
     """List S3 buckets."""
     client = get_client()
-    resp = client.get("/public-api/storage")
+    resp = client.get("/storage")
     data = resp.get("data", [])
     output(data, COLUMNS, title="S3 Buckets", as_json=json)

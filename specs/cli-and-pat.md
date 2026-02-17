@@ -417,15 +417,15 @@ List resources for an application. RBAC: `APPS_READ`
 
 #### `GET /public-api/apps/{app_id}/secrets?include_values=false`
 
-List environment variable keys for an application. RBAC: `APPS_SHOW_SECRETS` (per-app)
+List environment variable keys for an application. Response does not include secret IDs — only `key` (and `value` if `include_values=true`). RBAC: `APPS_SHOW_SECRETS` (per-app)
 
-#### `GET /public-api/apps/{app_id}/secrets/{secret_id}`
+#### `GET /public-api/apps/{app_id}/secrets/{secret_key}`
 
-Get single secret with value. RBAC: `APPS_SHOW_SECRETS` (per-app)
+Get single secret by key name (e.g. `DATABASE_URL`). Returns decrypted value and `resource_id` (`null` for global secrets). RBAC: `APPS_SHOW_SECRETS` (per-app)
 
 #### `GET /public-api/apps/{app_id}/resources/{resource_id}/secrets?include_values=false`
 
-List resource-level secrets. RBAC: `APPS_SHOW_SECRETS` (per-app)
+List resource-level secrets. Response does not include secret IDs — only `key` (and `value` if `include_values=true`). RBAC: `APPS_SHOW_SECRETS` (per-app)
 
 #### `GET /public-api/databases`
 

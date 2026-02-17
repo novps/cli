@@ -23,6 +23,6 @@ def list_databases(
 ) -> None:
     """List databases."""
     client = get_client()
-    resp = client.get("/public-api/databases")
+    resp = client.get("/databases")
     data = resp.get("data", [])
     output(data, COLUMNS, title="Databases", as_json=json)

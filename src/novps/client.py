@@ -35,7 +35,7 @@ class NoVPSClient:
             raise typer.Exit(code=1)
 
         if resp.status_code >= 400:
-            typer.echo(f"Error: API returned {resp.status_code}", err=True)
+            typer.echo(f"Error: API returned {resp.status_code} ({method} {self._client.base_url}{path})", err=True)
             try:
                 body = resp.json()
                 if errors := body.get("errors"):

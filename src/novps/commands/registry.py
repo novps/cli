@@ -21,6 +21,6 @@ def list_registry(
 ) -> None:
     """List registry namespaces."""
     client = get_client()
-    resp = client.get("/public-api/registry")
+    resp = client.get("/registry")
     data = resp.get("data", [])
     output(data, COLUMNS, title="Registry Namespaces", as_json=json)

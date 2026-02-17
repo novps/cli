@@ -20,7 +20,7 @@ def login() -> None:
     # Validate token by calling the API
     client = NoVPSClient(token=token, base_url=get_api_url())
     try:
-        client.get("/public-api/apps")
+        client.get("/apps")
     except SystemExit:
         typer.echo("Error: Token validation failed.", err=True)
         raise typer.Exit(code=1)

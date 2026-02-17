@@ -44,7 +44,7 @@ def _obtain_ticket(target_type: str, target_id: str, remote_port: int | None) ->
     payload: dict = {"target_type": target_type, "target_id": target_id}
     if remote_port is not None:
         payload["port"] = remote_port
-    resp = client.post("/public-api/port-forward/ticket", data=payload)
+    resp = client.post("/port-forward/ticket", data=payload)
     return resp.get("data", {})
 
 

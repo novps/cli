@@ -35,7 +35,7 @@ def list_apps(
 ) -> None:
     """List applications."""
     client = get_client()
-    resp = client.get("/public-api/apps")
+    resp = client.get("/apps")
     data = resp.get("data", [])
     output(data, APP_COLUMNS, title="Applications", as_json=json)
 
@@ -47,6 +47,6 @@ def resources(
 ) -> None:
     """List resources for an application."""
     client = get_client()
-    resp = client.get(f"/public-api/apps/{app_id}/resources")
+    resp = client.get(f"/apps/{app_id}/resources")
     data = resp.get("data", [])
     output(data, RESOURCE_COLUMNS, title="Resources", as_json=json)
