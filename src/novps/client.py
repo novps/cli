@@ -48,9 +48,9 @@ class NoVPSClient:
         return resp.json()
 
 
-def get_client() -> NoVPSClient:
-    token = get_token()
+def get_client(project: str = "default") -> NoVPSClient:
+    token = get_token(project)
     if not token:
-        typer.echo("Error: Not authenticated. Run 'novps auth login' first.", err=True)
+        typer.echo(f"Error: Not authenticated for project '{project}'. Run 'novps auth login --project={project}' first.", err=True)
         raise typer.Exit(code=1)
     return NoVPSClient(token=token, base_url=get_api_url())

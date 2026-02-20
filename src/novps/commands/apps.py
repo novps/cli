@@ -10,7 +10,6 @@ app = typer.Typer(no_args_is_help=True)
 APP_COLUMNS = [
     ("id", "ID"),
     ("name", "Name"),
-    ("namespace", "Namespace"),
     ("resources_count", "Resources"),
     ("created_at", "Created At"),
 ]
@@ -32,9 +31,10 @@ RESOURCE_COLUMNS = [
 @app.command("list")
 def list_apps(
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """List applications."""
-    client = get_client()
+    client = get_client(project)
     resp = client.get("/apps")
     data = resp.get("data", [])
     output(data, APP_COLUMNS, title="Applications", as_json=json)
@@ -44,9 +44,10 @@ def list_apps(
 def resources(
     app_id: str = typer.Argument(help="Application ID."),
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """List resources for an application."""
-    client = get_client()
+    client = get_client(project)
     resp = client.get(f"/apps/{app_id}/resources")
     data = resp.get("data", [])
     output(data, RESOURCE_COLUMNS, title="Resources", as_json=json)

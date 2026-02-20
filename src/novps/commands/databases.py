@@ -20,9 +20,10 @@ COLUMNS = [
 @app.command("list")
 def list_databases(
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """List databases."""
-    client = get_client()
+    client = get_client(project)
     resp = client.get("/databases")
     data = resp.get("data", [])
     output(data, COLUMNS, title="Databases", as_json=json)

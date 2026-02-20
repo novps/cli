@@ -22,15 +22,23 @@ def save_config(config: dict[str, Any]) -> None:
     CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
 
 
-def get_token() -> str | None:
-    return load_config().get("token")
+def get_token(project: str = "default") -> str | None:
+    config = load_config()
+    # New format: projects.{alias}.token
+    token = config.get("projects", {}).get(project, {}).get("token")
+    if token:
+        return token
+    # Legacy fallback: top-level "token" field for default project only
+    if project == "default":
+        return config.get("token")
+    return None
 
 
 def get_api_url() -> str:
     return os.environ.get("NOVPS_API_URL") or load_config().get("api_url") or DEFAULT_API_URL
 
 
-DEFAULT_WS_URL = "wss://ws.novps.io"
+DEFAULT_WS_URL = "wss://websocket.novps.io"
 
 
 def get_ws_url() -> str:

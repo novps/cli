@@ -25,22 +25,24 @@ def forward_resource(
     resource_id: str = typer.Argument(help="Resource ID to forward to."),
     remote_port: int = typer.Argument(help="Remote port on the resource."),
     local_port: Optional[int] = typer.Option(None, "--local-port", "-l", help="Local port to listen on (defaults to remote port)."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """Forward a local port to a resource."""
-    _run_port_forward("resource", resource_id, remote_port, local_port or remote_port)
+    _run_port_forward("resource", resource_id, remote_port, local_port or remote_port, project)
 
 
 @app.command("database")
 def forward_database(
     database_id: str = typer.Argument(help="Database ID to forward to."),
     local_port: Optional[int] = typer.Option(None, "--local-port", "-l", help="Local port to listen on (defaults to the database engine port)."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """Forward a local port to a database."""
-    _run_port_forward("database", database_id, remote_port=None, local_port=local_port)
+    _run_port_forward("database", database_id, remote_port=None, local_port=local_port, project=project)
 
 
-def _obtain_ticket(target_type: str, target_id: str, remote_port: int | None) -> dict:
-    client = get_client()
+def _obtain_ticket(target_type: str, target_id: str, remote_port: int | None, project: str = "default") -> dict:
+    client = get_client(project)
     payload: dict = {"target_type": target_type, "target_id": target_id}
     if remote_port is not None:
         payload["port"] = remote_port
@@ -53,10 +55,11 @@ def _run_port_forward(
     target_id: str,
     remote_port: int | None,
     local_port: int | None,
+    project: str = "default",
 ) -> None:
     if local_port is None:
         # Request a ticket to determine the port from the server (databases)
-        data = _obtain_ticket(target_type, target_id, remote_port)
+        data = _obtain_ticket(target_type, target_id, remote_port, project)
         local_port = data.get("port", remote_port)
         if local_port is None:
             typer.echo("Error: could not determine local port.", err=True)
@@ -72,7 +75,7 @@ def _run_port_forward(
     typer.echo("Press Ctrl+C to stop.\n")
 
     try:
-        asyncio.run(_async_forward(ws_base, target_type, target_id, remote_port, local_port))
+        asyncio.run(_async_forward(ws_base, target_type, target_id, remote_port, local_port, project))
     except KeyboardInterrupt:
         typer.echo("\nStopped.")
 
@@ -83,9 +86,10 @@ async def _async_forward(
     target_id: str,
     remote_port: int | None,
     local_port: int,
+    project: str = "default",
 ) -> None:
     server = await asyncio.start_server(
-        lambda r, w: _handle_tcp_connection(r, w, ws_base, target_type, target_id, remote_port),
+        lambda r, w: _handle_tcp_connection(r, w, ws_base, target_type, target_id, remote_port, project),
         host="127.0.0.1",
         port=local_port,
     )
@@ -100,12 +104,13 @@ async def _handle_tcp_connection(
     target_type: str,
     target_id: str,
     remote_port: int | None,
+    project: str = "default",
 ) -> None:
     peer = writer.get_extra_info("peername")
     typer.echo(f"[connect] {peer[0]}:{peer[1]}")
 
     try:
-        data = await asyncio.to_thread(_obtain_ticket, target_type, target_id, remote_port)
+        data = await asyncio.to_thread(_obtain_ticket, target_type, target_id, remote_port, project)
         ticket = data["ticket"]
         ws_url = ws_base + data["websocket_path"]
 

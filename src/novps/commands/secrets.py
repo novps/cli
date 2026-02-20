@@ -21,9 +21,10 @@ def list_secrets(
     resource_id: str | None = typer.Option(None, "--resource", "-r", help="Resource ID (for resource-level secrets)."),
     with_values: bool = typer.Option(False, "--with-values", help="Include secret values in the output."),
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """List secret keys for an application or resource."""
-    client = get_client()
+    client = get_client(project)
     include_values = "true" if with_values else "false"
 
     if resource_id:
@@ -76,9 +77,10 @@ def get_secret(
     app_id: str = typer.Argument(help="Application ID."),
     secret_key: str = typer.Argument(help="Secret key name (e.g. DATABASE_URL)."),
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """Get a secret value by key name."""
-    client = get_client()
+    client = get_client(project)
     resp = client.get(f"/apps/{app_id}/secrets/{secret_key}")
     data = resp.get("data", {})
 

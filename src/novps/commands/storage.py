@@ -18,9 +18,10 @@ COLUMNS = [
 @app.command("list")
 def list_storage(
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """List S3 buckets."""
-    client = get_client()
+    client = get_client(project)
     resp = client.get("/storage")
     data = resp.get("data", [])
     output(data, COLUMNS, title="S3 Buckets", as_json=json)
