@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
+import httpx
 import typer
 from rich.table import Table
 
@@ -171,3 +172,5 @@ def resource_logs(
                 cursor_ns = new_entries[-1][0]
     except KeyboardInterrupt:
         pass
+    except (httpx.RemoteProtocolError, httpx.ConnectError):
+        typer.echo("Session closed by server... Bye-bye")
