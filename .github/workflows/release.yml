@@ -51,6 +51,7 @@ jobs:
             --hidden-import novps.commands.secrets \
             --hidden-import novps.commands.port_forward \
             --hidden-import novps.commands.resources \
+            --hidden-import shellingham.posix \
             src/novps/main.py
 
       - name: Verify binary
