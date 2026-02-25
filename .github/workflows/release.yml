@@ -47,6 +47,8 @@ jobs:
             --hidden-import novps.commands.port_forward \
             --hidden-import novps.commands.resources \
             --hidden-import shellingham.posix \
+            --collect-submodules rich._cell_widths \
+            --collect-submodules rich._unicode_data \
             src/novps/main.py
 
       - name: Verify binary
@@ -96,6 +98,8 @@ jobs:
             --hidden-import novps.commands.port_forward \
             --hidden-import novps.commands.resources \
             --hidden-import shellingham.posix \
+            --collect-submodules rich._cell_widths \
+            --collect-submodules rich._unicode_data \
             src/novps/main.py
 
       - name: Verify binary
