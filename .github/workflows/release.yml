@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            artifact: novps-linux-x86_64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            artifact: novps-linux-arm64
+          - os: macos-13
+            arch: x86_64
+            artifact: novps-darwin-x86_64
+          - os: macos-latest
+            arch: arm64
+            artifact: novps-darwin-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install .
+
+      - name: Build binary
+        run: |
+          pyinstaller \
+            --onefile \
+            --name "${{ matrix.artifact }}" \
+            --paths src \
+            --hidden-import novps.commands.auth \
+            --hidden-import novps.commands.apps \
+            --hidden-import novps.commands.databases \
+            --hidden-import novps.commands.registry \
+            --hidden-import novps.commands.storage \
+            --hidden-import novps.commands.secrets \
+            --hidden-import novps.commands.port_forward \
+            --hidden-import novps.commands.resources \
+            src/novps/main.py
+
+      - name: Verify binary
+        run: |
+          chmod +x dist/${{ matrix.artifact }}
+          ./dist/${{ matrix.artifact }} --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
