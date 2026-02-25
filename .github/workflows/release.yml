@@ -14,16 +14,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            arch: x86_64
             artifact: novps-linux-x86_64
           - os: ubuntu-24.04-arm
-            arch: arm64
             artifact: novps-linux-arm64
-          - os: macos-13
-            arch: x86_64
-            artifact: novps-darwin-x86_64
           - os: macos-latest
-            arch: arm64
+            artifact: novps-darwin-x86_64
+            arch_prefix: arch -x86_64
+          - os: macos-latest
             artifact: novps-darwin-arm64
 
     runs-on: ${{ matrix.os }}
@@ -37,12 +34,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller
-          pip install .
+          ${{ matrix.arch_prefix }} pip install pyinstaller
+          ${{ matrix.arch_prefix }} pip install .
 
       - name: Build binary
         run: |
-          pyinstaller \
+          ${{ matrix.arch_prefix }} pyinstaller \
             --onefile \
             --name "${{ matrix.artifact }}" \
             --paths src \
@@ -59,7 +56,7 @@ jobs:
       - name: Verify binary
         run: |
           chmod +x dist/${{ matrix.artifact }}
-          ./dist/${{ matrix.artifact }} --help
+          ${{ matrix.arch_prefix }} ./dist/${{ matrix.artifact }} --help
 
       - uses: actions/upload-artifact@v4
         with:
