@@ -8,12 +8,12 @@ BINARY_NAME="novps"
 
 setup_colors() {
     if [ -t 1 ] && [ -t 2 ]; then
-        RED='\033[0;31m'
-        GREEN='\033[0;32m'
-        YELLOW='\033[0;33m'
-        BLUE='\033[0;34m'
-        BOLD='\033[1m'
-        RESET='\033[0m'
+        RED=$(printf '\033[0;31m')
+        GREEN=$(printf '\033[0;32m')
+        YELLOW=$(printf '\033[0;33m')
+        BLUE=$(printf '\033[0;34m')
+        BOLD=$(printf '\033[1m')
+        RESET=$(printf '\033[0m')
     else
         RED=''
         GREEN=''
