@@ -15,10 +15,10 @@ jobs:
         include:
           - runner: ubuntu-latest
             artifact: novps-linux-x86_64
-            image: quay.io/pypa/manylinux_2_28_x86_64
+            image: python:3.12-bullseye
           - runner: ubuntu-24.04-arm
             artifact: novps-linux-arm64
-            image: quay.io/pypa/manylinux_2_28_aarch64
+            image: python:3.12-bullseye
 
     runs-on: ${{ matrix.runner }}
     container:
@@ -29,12 +29,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          /opt/python/cp312-cp312/bin/pip install pyinstaller
-          /opt/python/cp312-cp312/bin/pip install .
+          pip install pyinstaller
+          pip install .
 
       - name: Build binary
         run: |
-          /opt/python/cp312-cp312/bin/pyinstaller \
+          pyinstaller \
             --onefile \
             --name "${{ matrix.artifact }}" \
             --paths src \
