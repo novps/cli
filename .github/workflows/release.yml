@@ -9,21 +9,65 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-linux:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - runner: ubuntu-latest
             artifact: novps-linux-x86_64
-          - os: ubuntu-24.04-arm
+            image: quay.io/pypa/manylinux_2_28_x86_64
+          - runner: ubuntu-24.04-arm
             artifact: novps-linux-arm64
-          - os: macos-latest
-            artifact: novps-darwin-x86_64
-            arch_prefix: arch -x86_64
-          - os: macos-latest
-            artifact: novps-darwin-arm64
+            image: quay.io/pypa/manylinux_2_28_aarch64
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          /opt/python/cp312-cp312/bin/pip install pyinstaller
+          /opt/python/cp312-cp312/bin/pip install .
+
+      - name: Build binary
+        run: |
+          /opt/python/cp312-cp312/bin/pyinstaller \
+            --onefile \
+            --name "${{ matrix.artifact }}" \
+            --paths src \
+            --hidden-import novps.commands.auth \
+            --hidden-import novps.commands.apps \
+            --hidden-import novps.commands.databases \
+            --hidden-import novps.commands.registry \
+            --hidden-import novps.commands.storage \
+            --hidden-import novps.commands.secrets \
+            --hidden-import novps.commands.port_forward \
+            --hidden-import novps.commands.resources \
+            --hidden-import shellingham.posix \
+            src/novps/main.py
+
+      - name: Verify binary
+        run: |
+          chmod +x dist/${{ matrix.artifact }}
+          ./dist/${{ matrix.artifact }} --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - artifact: novps-darwin-x86_64
+            arch_prefix: arch -x86_64
+          - artifact: novps-darwin-arm64
+
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +109,7 @@ jobs:
           path: dist/${{ matrix.artifact }}
 
   release:
-    needs: build
+    needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
 
     steps:
