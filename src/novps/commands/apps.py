@@ -18,13 +18,9 @@ RESOURCE_COLUMNS = [
     ("id", "ID"),
     ("name", "Name"),
     ("type", "Type"),
-    ("internal_domain", "Internal Domain"),
-    ("replicas_type", "Replicas Type"),
+    ("public_domain", "Public Domain"),
     ("replicas_count", "Replicas"),
-    ("image_name", "Image"),
-    ("image_tag", "Tag"),
-    ("http_port", "HTTP Port"),
-    ("internal_ports", "Internal Ports"),
+    ("schedule", "Schedule"),
 ]
 
 
