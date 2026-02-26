@@ -11,9 +11,11 @@ app = typer.Typer(no_args_is_help=True)
 @app.command()
 def login(
     project: str = typer.Option("default", "--project", "-p", help="Project alias to store the token under."),
+    token: str = typer.Option("", "--token", "-t", help="Personal Access Token. If not provided, you will be prompted."),
 ) -> None:
     """Authenticate with a Personal Access Token."""
-    token = typer.prompt("Enter your Personal Access Token", hide_input=True)
+    if not token:
+        token = typer.prompt("Enter your Personal Access Token", hide_input=True)
 
     if not token.startswith("nvps_"):
         typer.echo("Error: Invalid token format. Token must start with 'nvps_'.", err=True)
