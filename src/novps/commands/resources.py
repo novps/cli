@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import asyncio
+import os
 import re
+import signal
+import sys
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 import httpx
 import typer
+import websockets
 from rich.table import Table
 
 from novps.client import get_client
+from novps.config import get_ws_url
 from novps.output import console, print_json
 
 app = typer.Typer(no_args_is_help=True)
@@ -174,3 +180,108 @@ def resource_logs(
         pass
     except (httpx.RemoteProtocolError, httpx.ConnectError):
         typer.echo("Session closed by server... Bye-bye")
+
+
+# ── exec/connect helpers ─────────────────────────────────────────────
+
+
+def _get_terminal_size() -> tuple[int, int]:
+    cols, rows = os.get_terminal_size()
+    return cols, rows
+
+
+async def _async_connect(ws_base: str, websocket_path: str) -> None:
+    ws_url = ws_base + websocket_path
+
+    async with websockets.connect(ws_url) as ws:
+        loop = asyncio.get_event_loop()
+
+        # Send initial terminal size
+        cols, rows = _get_terminal_size()
+        await ws.send(f"resize:{cols}:{rows}")
+
+        # Handle SIGWINCH (terminal resize)
+        if sys.platform != "win32":
+            def on_resize() -> None:
+                c, r = _get_terminal_size()
+                asyncio.ensure_future(ws.send(f"resize:{c}:{r}"))
+
+            loop.add_signal_handler(signal.SIGWINCH, on_resize)
+
+        stdin_task = asyncio.create_task(_stdin_to_ws(ws, loop))
+        stdout_task = asyncio.create_task(_ws_to_stdout(ws, loop))
+
+        done, pending = await asyncio.wait(
+            [stdin_task, stdout_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+
+async def _stdin_to_ws(ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop) -> None:
+    reader = asyncio.StreamReader()
+    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+
+    while True:
+        data = await reader.read(4096)
+        if not data:
+            await ws.close()
+            return
+        await ws.send(data.decode("utf-8", errors="replace"))
+
+
+async def _ws_to_stdout(ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop) -> None:
+    async for message in ws:
+        if isinstance(message, str):
+            sys.stdout.write(message)
+            sys.stdout.flush()
+        elif isinstance(message, bytes):
+            sys.stdout.buffer.write(message)
+            sys.stdout.buffer.flush()
+
+
+@app.command("connect")
+def resource_connect(
+    resource_id: str = typer.Argument(help="Resource ID to connect to."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
+) -> None:
+    """Connect to a resource pod for interactive shell access."""
+    client = get_client(project)
+
+    resp = client.post("/public-api/exec/ticket", data={"resource_id": resource_id})
+    data = resp.get("data", {})
+
+    ticket = data.get("ticket")
+    websocket_path = data.get("websocket_path")
+
+    if not ticket or not websocket_path:
+        typer.echo("Error: Failed to obtain exec ticket.", err=True)
+        raise typer.Exit(code=1)
+
+    ws_base = get_ws_url()
+
+    # Put terminal in raw mode for interactive shell
+    if sys.stdin.isatty():
+        import tty
+        import termios
+
+        old_settings = termios.tcgetattr(sys.stdin)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            asyncio.run(_async_connect(ws_base, websocket_path))
+        except KeyboardInterrupt:
+            pass
+        finally:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            typer.echo()  # newline after restoring terminal
+    else:
+        try:
+            asyncio.run(_async_connect(ws_base, websocket_path))
+        except KeyboardInterrupt:
+            pass
