@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import select
 import signal
 import ssl
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
@@ -211,33 +213,66 @@ def _get_terminal_size() -> tuple[int, int]:
         return 80, 24
 
 
+_RECV_TIMEOUT = 5  # seconds to wait for server output after Enter before assuming shell exited
+
+
+def _read_stdin_loop(
+    fd: int, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop,
+    stop: threading.Event,
+) -> None:
+    """Read stdin in a thread using select() with timeout so we can check stop flag."""
+    while not stop.is_set():
+        ready, _, _ = select.select([fd], [], [], 0.1)
+        if not ready:
+            continue
+        try:
+            data = os.read(fd, 4096)
+        except OSError:
+            break
+        if not data:
+            break
+        loop.call_soon_threadsafe(queue.put_nowait, data)
+    loop.call_soon_threadsafe(queue.put_nowait, None)
+
+
 async def _async_connect(ws_base: str, websocket_path: str) -> None:
     ws_url = ws_base + websocket_path
     ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 
-    async with websockets.connect(ws_url, ssl=ssl_ctx) as ws:
-        loop = asyncio.get_event_loop()
+    loop = asyncio.get_event_loop()
+    stdin_fd = sys.stdin.fileno()
+    stop = threading.Event()
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
+    stdin_thread = threading.Thread(
+        target=_read_stdin_loop, args=(stdin_fd, queue, loop, stop), daemon=True,
+    )
+    stdin_thread.start()
+
+    ws = await websockets.connect(ws_url, ssl=ssl_ctx, close_timeout=1)
+
+    try:
         # Send initial terminal size
         cols, rows = _get_terminal_size()
         await ws.send(f"resize:{cols}:{rows}")
 
         # Handle SIGWINCH (terminal resize)
         if sys.platform != "win32":
-
             def on_resize() -> None:
                 c, r = _get_terminal_size()
                 asyncio.ensure_future(ws.send(f"resize:{c}:{r}"))
 
             loop.add_signal_handler(signal.SIGWINCH, on_resize)
 
-        stdin_task = asyncio.create_task(_stdin_to_ws(ws, loop))
-        stdout_task = asyncio.create_task(_ws_to_stdout(ws, loop))
+        stdin_task = asyncio.create_task(_stdin_to_ws(queue, ws))
+        stdout_task = asyncio.create_task(_ws_to_stdout(ws))
 
         done, pending = await asyncio.wait(
             [stdin_task, stdout_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
+
+        queue.put_nowait(None)
 
         for task in pending:
             task.cancel()
@@ -245,34 +280,64 @@ async def _async_connect(ws_base: str, websocket_path: str) -> None:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+    except (websockets.exceptions.ConnectionClosedOK, websockets.exceptions.ConnectionClosedError):
+        pass
+    finally:
+        stop.set()
+        try:
+            await asyncio.wait_for(ws.close(), timeout=1)
+        except Exception:
+            pass
+        if sys.platform != "win32":
+            loop.remove_signal_handler(signal.SIGWINCH)
 
 
-async def _stdin_to_ws(
-    ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop
-) -> None:
-    reader = asyncio.StreamReader()
-    await loop.connect_read_pipe(
-        lambda: asyncio.StreamReaderProtocol(reader), sys.stdin
-    )
-
-    while True:
-        data = await reader.read(4096)
-        if not data:
-            await ws.close()
-            return
-        await ws.send(data.decode("utf-8", errors="replace"))
+async def _stdin_to_ws(queue: asyncio.Queue, ws: websockets.ClientConnection) -> None:
+    try:
+        while True:
+            data = await queue.get()
+            if data is None:
+                return
+            # Ctrl+] — local disconnect (like telnet)
+            if b"\x1d" in data:
+                return
+            await ws.send(data.decode("utf-8", errors="replace"))
+    except websockets.exceptions.ConnectionClosed:
+        pass
 
 
-async def _ws_to_stdout(
-    ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop
-) -> None:
-    async for message in ws:
-        if isinstance(message, str):
-            sys.stdout.write(message)
-            sys.stdout.flush()
-        elif isinstance(message, bytes):
-            sys.stdout.buffer.write(message)
-            sys.stdout.buffer.flush()
+async def _ws_to_stdout(ws: websockets.ClientConnection) -> None:
+    """Receive WS messages and write to stdout.
+
+    Uses a recv timeout: after _RECV_TIMEOUT seconds of silence, sends a
+    probe newline. If still no response within _RECV_TIMEOUT seconds, assumes
+    the remote shell has exited and returns.
+    """
+    try:
+        while True:
+            try:
+                message = await asyncio.wait_for(ws.recv(), timeout=_RECV_TIMEOUT)
+            except asyncio.TimeoutError:
+                # No output for a while — probe to see if the shell is alive
+                try:
+                    await ws.send("\n")
+                except websockets.exceptions.ConnectionClosed:
+                    return
+                # Wait for response to probe
+                try:
+                    message = await asyncio.wait_for(ws.recv(), timeout=_RECV_TIMEOUT)
+                except asyncio.TimeoutError:
+                    # Shell is dead — no response to probe
+                    return
+
+            if isinstance(message, str):
+                sys.stdout.write(message)
+                sys.stdout.flush()
+            elif isinstance(message, bytes):
+                sys.stdout.buffer.write(message)
+                sys.stdout.buffer.flush()
+    except websockets.exceptions.ConnectionClosed:
+        pass
 
 
 @app.command("connect")
@@ -295,6 +360,8 @@ def resource_connect(
 
     ws_base = get_ws_url()
 
+    typer.echo("Use Ctrl+] to disconnect.\n")
+
     # Put terminal in raw mode for interactive shell
     if sys.stdin.isatty():
         import termios
@@ -308,7 +375,7 @@ def resource_connect(
             pass
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-            typer.echo()  # newline after restoring terminal
+            typer.echo("\nConnection closed.")
     else:
         try:
             asyncio.run(_async_connect(ws_base, websocket_path))
