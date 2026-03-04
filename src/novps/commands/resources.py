@@ -4,11 +4,13 @@ import asyncio
 import os
 import re
 import signal
+import ssl
 import sys
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
+import certifi
 import httpx
 import typer
 import websockets
@@ -202,14 +204,18 @@ def resource_logs(
 
 
 def _get_terminal_size() -> tuple[int, int]:
-    cols, rows = os.get_terminal_size()
-    return cols, rows
+    try:
+        cols, rows = os.get_terminal_size()
+        return cols, rows
+    except OSError:
+        return 80, 24
 
 
 async def _async_connect(ws_base: str, websocket_path: str) -> None:
     ws_url = ws_base + websocket_path
+    ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 
-    async with websockets.connect(ws_url) as ws:
+    async with websockets.connect(ws_url, ssl=ssl_ctx) as ws:
         loop = asyncio.get_event_loop()
 
         # Send initial terminal size
