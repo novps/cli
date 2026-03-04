@@ -96,7 +96,9 @@ def resource_info(
 def _parse_since(value: str) -> int:
     match = DURATION_PATTERN.match(value)
     if not match:
-        raise typer.BadParameter(f"Invalid duration '{value}'. Use format like 30s, 5m, 1h, 1d.")
+        raise typer.BadParameter(
+            f"Invalid duration '{value}'. Use format like 30s, 5m, 1h, 1d."
+        )
     return int(match.group(1)) * DURATION_MULTIPLIERS[match.group(2)]
 
 
@@ -119,8 +121,14 @@ def _flatten(result: list) -> list[tuple[str, str]]:
 
 
 def _fetch_logs(
-    client, resource_id: str, start_ns: str, end_ns: str,
-    limit: int, direction: str, search: str | None, pod: str | None,
+    client,
+    resource_id: str,
+    start_ns: str,
+    end_ns: str,
+    limit: int,
+    direction: str,
+    search: str | None,
+    pod: str | None,
 ) -> list[tuple[str, str]]:
     params: dict[str, str | int] = {
         "start": start_ns,
@@ -141,8 +149,12 @@ def _fetch_logs(
 def resource_logs(
     resource_id: str = typer.Argument(help="Resource ID."),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output."),
-    lines: int = typer.Option(100, "--lines", "-n", help="Number of log lines (1-5000)."),
-    since: str = typer.Option("1h", "--since", "-s", help="Show logs since duration (e.g. 30s, 5m, 1h, 1d)."),
+    lines: int = typer.Option(
+        100, "--lines", "-n", help="Number of log lines (1-5000)."
+    ),
+    since: str = typer.Option(
+        "1h", "--since", "-s", help="Show logs since duration (e.g. 30s, 5m, 1h, 1d)."
+    ),
     search: str | None = typer.Option(None, "--search", help="Filter by substring."),
     pod: str | None = typer.Option(None, "--pod", help="Filter by pod name."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
@@ -154,7 +166,9 @@ def resource_logs(
     end_ns = _now_ns()
     start_ns = str(int(end_ns) - since_seconds * 1_000_000_000)
 
-    entries = _fetch_logs(client, resource_id, start_ns, end_ns, lines, "backward", search, pod)
+    entries = _fetch_logs(
+        client, resource_id, start_ns, end_ns, lines, "backward", search, pod
+    )
 
     for ts_ns, line in entries:
         typer.echo(f"{_format_ts(ts_ns)}  {line}")
@@ -169,7 +183,9 @@ def resource_logs(
             time.sleep(_POLL_INTERVAL)
             new_start = str(int(cursor_ns) + 1)
             new_end = _now_ns()
-            new_entries = _fetch_logs(client, resource_id, new_start, new_end, lines, "forward", search, pod)
+            new_entries = _fetch_logs(
+                client, resource_id, new_start, new_end, lines, "forward", search, pod
+            )
 
             for ts_ns, line in new_entries:
                 typer.echo(f"{_format_ts(ts_ns)}  {line}")
@@ -202,6 +218,7 @@ async def _async_connect(ws_base: str, websocket_path: str) -> None:
 
         # Handle SIGWINCH (terminal resize)
         if sys.platform != "win32":
+
             def on_resize() -> None:
                 c, r = _get_terminal_size()
                 asyncio.ensure_future(ws.send(f"resize:{c}:{r}"))
@@ -224,9 +241,13 @@ async def _async_connect(ws_base: str, websocket_path: str) -> None:
                 pass
 
 
-async def _stdin_to_ws(ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop) -> None:
+async def _stdin_to_ws(
+    ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop
+) -> None:
     reader = asyncio.StreamReader()
-    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    await loop.connect_read_pipe(
+        lambda: asyncio.StreamReaderProtocol(reader), sys.stdin
+    )
 
     while True:
         data = await reader.read(4096)
@@ -236,7 +257,9 @@ async def _stdin_to_ws(ws: websockets.ClientConnection, loop: asyncio.AbstractEv
         await ws.send(data.decode("utf-8", errors="replace"))
 
 
-async def _ws_to_stdout(ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop) -> None:
+async def _ws_to_stdout(
+    ws: websockets.ClientConnection, loop: asyncio.AbstractEventLoop
+) -> None:
     async for message in ws:
         if isinstance(message, str):
             sys.stdout.write(message)
@@ -254,7 +277,7 @@ def resource_connect(
     """Connect to a resource pod for interactive shell access."""
     client = get_client(project)
 
-    resp = client.post("/public-api/exec/ticket", data={"resource_id": resource_id})
+    resp = client.post("/exec/ticket", data={"resource_id": resource_id})
     data = resp.get("data", {})
 
     ticket = data.get("ticket")
@@ -268,8 +291,8 @@ def resource_connect(
 
     # Put terminal in raw mode for interactive shell
     if sys.stdin.isatty():
-        import tty
         import termios
+        import tty
 
         old_settings = termios.tcgetattr(sys.stdin)
         try:
