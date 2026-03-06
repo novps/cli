@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 from typing import Optional
 
+import certifi
 import typer
 import websockets
 from websockets.frames import CloseCode
@@ -114,8 +116,10 @@ async def _handle_tcp_connection(
         ticket = data["ticket"]
         ws_url = ws_base + data["websocket_path"]
 
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
         async with websockets.connect(
             ws_url,
+            ssl=ssl_ctx,
             additional_headers={"X-Ticket": ticket},
         ) as ws:
             tcp_to_ws = asyncio.create_task(_tcp_to_ws(reader, ws))
