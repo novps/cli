@@ -16,11 +16,17 @@ class NoVPSClient:
             timeout=30.0,
         )
 
-    def get(self, path: str) -> Any:
-        return self._request("GET", path)
+    def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return self._request("GET", path, params=params)
 
     def post(self, path: str, data: dict[str, Any] | None = None) -> Any:
         return self._request("POST", path, json=data)
+
+    def patch(self, path: str, data: dict[str, Any] | None = None) -> Any:
+        return self._request("PATCH", path, json=data)
+
+    def delete(self, path: str) -> Any:
+        return self._request("DELETE", path)
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
@@ -39,11 +45,24 @@ class NoVPSClient:
             try:
                 body = resp.json()
                 if errors := body.get("errors"):
-                    for err in errors:
-                        typer.echo(f"  - {err}", err=True)
+                    if isinstance(errors, list):
+                        for err in errors:
+                            typer.echo(f"  - {err}", err=True)
+                    else:
+                        typer.echo(f"  - {errors}", err=True)
+                elif detail := body.get("detail"):
+                    if isinstance(detail, list):
+                        for err in detail:
+                            msg = err.get("msg") if isinstance(err, dict) else str(err)
+                            typer.echo(f"  - {msg}", err=True)
+                    else:
+                        typer.echo(f"  - {detail}", err=True)
             except Exception:
                 pass
             raise typer.Exit(code=1)
+
+        if resp.status_code == 204 or not resp.content:
+            return {"data": {}, "errors": None}
 
         return resp.json()
 

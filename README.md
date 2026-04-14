@@ -88,7 +88,61 @@ novps secrets get <app_id> DATABASE_URL        # Get a single secret value
 ### Databases
 
 ```bash
-novps databases list              # List databases
+novps databases list                                  # List databases
+novps databases get <id>                              # Show details (table)
+novps databases get <id> --show-password              # Include password + DATABASE_URL
+novps databases get <id> --format env --show-password # Print as DB_HOST=, DATABASE_URL=, etc.
+novps databases get <id> --format json
+novps databases create --engine postgres --size sm    # Create (engine: postgres|redis, size: xs..xl, default count=1)
+novps databases create --engine postgres --size sm --postgres-version 16 --count 1
+novps databases create --engine postgres --size sm --wait   # Wait (with spinner) until the database is ready
+novps databases delete <id>                            # Delete (prompts to type DELETE)
+novps databases delete <id> --force                    # Delete without confirmation
+novps databases resize <id> --size lg [--count 2]     # Resize (only upscale is allowed)
+novps databases allow-apps <id> --app <uuid> --app <uuid>   # Restrict inbound to listed apps; no --app clears
+```
+
+#### Read-only replica (postgres)
+
+```bash
+novps databases replica create <db_id> --size sm
+novps databases replica resize <db_id> --size md
+novps databases replica delete <db_id>
+```
+
+#### Backups (postgres)
+
+```bash
+novps databases backups list <db_id>
+novps databases backups create <db_id>
+novps databases backups delete <db_id> <backup_id> [--force]
+```
+
+#### Connection pools (postgres)
+
+```bash
+novps databases pool list <db_id>
+novps databases pool create <db_id> --size 50 --mode transaction --target primary
+novps databases pool update <db_id> <pool_id> --size 80 --mode session
+novps databases pool delete <db_id> <pool_id> [--force]
+```
+
+#### Postgres databases inside an instance
+
+```bash
+novps databases pg-db list <db_id>
+novps databases pg-db create <db_id> --name analytics
+novps databases pg-db delete <db_id> <entry_id> [--force]
+```
+
+#### Postgres users inside an instance
+
+```bash
+novps databases pg-user list <db_id>                            # passwords hidden
+novps databases pg-user list <db_id> --show-password            # passwords in clear
+novps databases pg-user create <db_id> --name app_user \
+    --grant analytics=ro --grant reporting=all                  # password printed once in output
+novps databases pg-user delete <db_id> <entry_id> [--force]
 ```
 
 ### Registry
