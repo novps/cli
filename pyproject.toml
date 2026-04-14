@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "novps"
-version = "0.1.0"
+dynamic = ["version"]
 description = "CLI tool for novps.io infrastructure management"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,6 +17,13 @@ dependencies = [
 
 [project.scripts]
 novps = "novps.main:app"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { version_scheme = "no-guess-dev" }
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/novps/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/novps"]
