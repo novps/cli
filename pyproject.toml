@@ -13,6 +13,7 @@ dependencies = [
     "rich>=13",
     "websockets>=13",
     "certifi",
+    "PyYAML>=6.0",
 ]
 
 [project.scripts]

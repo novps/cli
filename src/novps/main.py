@@ -4,7 +4,7 @@ from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 import typer
 
-from novps.commands import apps, auth, databases, port_forward, registry, resources, secrets, storage
+from novps.commands import apps, auth, databases, github, port_forward, registry, resources, secrets, storage
 
 app = typer.Typer(name="novps", help="CLI tool for novps.io infrastructure management.", no_args_is_help=True)
 
@@ -16,6 +16,7 @@ app.add_typer(registry.app, name="registry", help="Registry management.")
 app.add_typer(resources.app, name="resources", help="Resource management.")
 app.add_typer(storage.app, name="storage", help="Storage management.")
 app.add_typer(port_forward.app, name="port-forward", help="Port forwarding to resources and databases.")
+app.add_typer(github.app, name="github", help="GitHub integration.")
 
 
 def _get_version() -> str:

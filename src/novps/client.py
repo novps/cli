@@ -8,6 +8,29 @@ import typer
 from novps.config import get_api_url, get_token
 
 
+def _format_validation_error(err: Any) -> str:
+    """Render a FastAPI/Pydantic validation error with its `loc` path.
+
+    Example: `body.resources.0.source.build_command: Field required`.
+    """
+    if not isinstance(err, dict):
+        return str(err)
+    loc_parts = err.get("loc") or []
+    if loc_parts and loc_parts[0] == "body":
+        loc_parts = loc_parts[1:]
+    loc = ".".join(str(p) for p in loc_parts)
+    msg = err.get("msg") or ""
+    suffix = ""
+    # pydantic's `missing` error sets `input` to the parent object — unhelpful to print.
+    if err.get("type") != "missing":
+        input_val = err.get("input")
+        if isinstance(input_val, (str, int, float, bool)):
+            shown = repr(input_val)
+            if len(shown) <= 80:
+                suffix = f" (got: {shown})"
+    return f"{loc}: {msg}{suffix}" if loc else f"{msg}{suffix}"
+
+
 class NoVPSClient:
     def __init__(self, token: str, base_url: str) -> None:
         self._client = httpx.Client(
@@ -24,6 +47,9 @@ class NoVPSClient:
 
     def patch(self, path: str, data: dict[str, Any] | None = None) -> Any:
         return self._request("PATCH", path, json=data)
+
+    def put(self, path: str, data: dict[str, Any] | None = None) -> Any:
+        return self._request("PUT", path, json=data)
 
     def delete(self, path: str) -> Any:
         return self._request("DELETE", path)
@@ -53,8 +79,7 @@ class NoVPSClient:
                 elif detail := body.get("detail"):
                     if isinstance(detail, list):
                         for err in detail:
-                            msg = err.get("msg") if isinstance(err, dict) else str(err)
-                            typer.echo(f"  - {msg}", err=True)
+                            typer.echo(f"  - {_format_validation_error(err)}", err=True)
                     else:
                         typer.echo(f"  - {detail}", err=True)
             except Exception:

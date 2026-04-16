@@ -381,3 +381,172 @@ def resource_connect(
             asyncio.run(_async_connect(ws_base, websocket_path))
         except KeyboardInterrupt:
             pass
+
+
+def _parse_replicas(value: str) -> tuple[str, int]:
+    if ":" not in value:
+        raise typer.BadParameter("Expected format SIZE:COUNT (e.g. sm:2)")
+    size, count_s = value.split(":", 1)
+    if size not in ("xs", "sm", "md", "lg", "xl"):
+        raise typer.BadParameter("SIZE must be one of: xs, sm, md, lg, xl")
+    try:
+        count = int(count_s)
+    except ValueError:
+        raise typer.BadParameter("COUNT must be an integer")
+    if not (1 <= count <= 10):
+        raise typer.BadParameter("COUNT must be between 1 and 10")
+    return size, count
+
+
+def _parse_env_pair(value: str) -> tuple[str, str]:
+    if "=" not in value:
+        raise typer.BadParameter(f"Expected KEY=VALUE, got: {value}")
+    key, val = value.split("=", 1)
+    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", key):
+        raise typer.BadParameter(f"Invalid env key: {key}")
+    return key, val
+
+
+def _confirm_delete(message: str, *, force: bool) -> None:
+    if force:
+        return
+    typer.echo(message)
+    answer = typer.prompt("Type DELETE to confirm", default="", show_default=False)
+    if answer != "DELETE":
+        typer.echo("Aborted.")
+        raise typer.Exit(code=1)
+
+
+@app.command("update")
+def update_resource(
+    resource_id: str = typer.Argument(help="Resource ID."),
+    image: str | None = typer.Option(None, "--image", help="New image name."),
+    tag: str | None = typer.Option(None, "--tag", help="New image tag."),
+    replicas: str | None = typer.Option(None, "--replicas", help="Replica size:count, e.g. sm:2."),
+    command: str | None = typer.Option(None, "--command", help="Override command."),
+    port: str | None = typer.Option(None, "--port", help="HTTP port."),
+    schedule: str | None = typer.Option(None, "--schedule", help="Cron schedule (for cron-job)."),
+    env: list[str] = typer.Option([], "--env", "-e", help="KEY=VALUE env var (repeatable)."),
+    no_deploy: bool = typer.Option(False, "--no-deploy", help="Do not trigger a deployment."),
+    json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
+) -> None:
+    """Update a resource's configuration."""
+    payload: dict = {}
+    if image is not None:
+        payload["image_name"] = image
+    if tag is not None:
+        payload["image_tag"] = tag
+    if replicas is not None:
+        size, count = _parse_replicas(replicas)
+        payload["replicas_type"] = size
+        payload["replicas_count"] = count
+    if command is not None:
+        payload["command"] = command
+    if port is not None:
+        payload["port"] = port
+    if schedule is not None:
+        payload["schedule"] = schedule
+    if env:
+        payload["envs"] = [{"key": k, "value": v} for k, v in (_parse_env_pair(e) for e in env)]
+    if no_deploy:
+        payload["do_not_deploy"] = True
+
+    if not payload:
+        typer.echo("Nothing to update. Provide at least one flag.", err=True)
+        raise typer.Exit(code=1)
+
+    client = get_client(project)
+    resp = client.patch(f"/resources/{resource_id}", data=payload)
+    data = resp.get("data", {})
+    if json:
+        print_json(data)
+        return
+    updated = data.get("updated", False)
+    typer.echo(f"Resource {resource_id}: {'updated' if updated else 'no changes'}")
+
+
+@app.command("scale")
+def scale_resource(
+    resource_id: str = typer.Argument(help="Resource ID."),
+    replicas: str = typer.Option(..., "--replicas", "-r", help="Replica size:count, e.g. sm:2."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
+) -> None:
+    """Scale a resource (shortcut for update --replicas)."""
+    size, count = _parse_replicas(replicas)
+    client = get_client(project)
+    client.patch(f"/resources/{resource_id}", data={"replicas_type": size, "replicas_count": count})
+    typer.echo(f"Resource {resource_id} scaled to {size}:{count}")
+
+
+@app.command("set-image")
+def set_image(
+    resource_id: str = typer.Argument(help="Resource ID."),
+    image: str | None = typer.Option(None, "--image", help="New image name."),
+    tag: str | None = typer.Option(None, "--tag", help="New image tag."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
+) -> None:
+    """Update the docker image and/or tag (shortcut for update)."""
+    payload: dict = {}
+    if image is not None:
+        payload["image_name"] = image
+    if tag is not None:
+        payload["image_tag"] = tag
+    if not payload:
+        typer.echo("Provide --image and/or --tag.", err=True)
+        raise typer.Exit(code=1)
+    client = get_client(project)
+    client.patch(f"/resources/{resource_id}", data=payload)
+    typer.echo(f"Resource {resource_id}: image updated.")
+
+
+@app.command("set-env")
+def set_env(
+    resource_id: str = typer.Argument(help="Resource ID."),
+    pairs: list[str] = typer.Argument(..., help="KEY=VALUE pairs (repeatable)."),
+    merge: bool = typer.Option(True, "--merge/--replace", help="Merge with existing envs or replace."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
+) -> None:
+    """Set resource environment variables."""
+    new_pairs = [_parse_env_pair(p) for p in pairs]
+    client = get_client(project)
+    envs: list[dict] = []
+    if merge:
+        resp = client.get(f"/resources/{resource_id}/environment-variables")
+        for e in resp.get("data", []) or []:
+            envs.append({"key": e.get("key"), "value": e.get("value", "")})
+        new_keys = {k for k, _ in new_pairs}
+        envs = [e for e in envs if e["key"] not in new_keys]
+    for k, v in new_pairs:
+        envs.append({"key": k, "value": v})
+    client.patch(f"/resources/{resource_id}", data={"envs": envs})
+    typer.echo(f"Resource {resource_id}: envs updated ({len(new_pairs)} changed).")
+
+
+@app.command("delete")
+def delete_resource(
+    resource_id: str = typer.Argument(help="Resource ID."),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
+) -> None:
+    """Delete a resource (soft delete)."""
+    _confirm_delete(f"This will delete resource {resource_id}.", force=force)
+    client = get_client(project)
+    client.delete(f"/resources/{resource_id}")
+    typer.echo(f"Resource {resource_id} deleted.")
+
+
+@app.command("deploy")
+def deploy_resource(
+    resource_id: str = typer.Argument(help="Resource ID."),
+    json: bool = typer.Option(False, "--json", help="Output as JSON."),
+    project: str = typer.Option("default", "--project", "-p", help="Project alias."),
+) -> None:
+    """Trigger a manual deployment for the resource."""
+    client = get_client(project)
+    resp = client.post(f"/resources/{resource_id}/deployment", data={})
+    data = resp.get("data", {})
+    if json:
+        print_json(data)
+        return
+    typer.echo(f"Deployment queued: {data.get('id')} (status: {data.get('status')})")
