@@ -149,6 +149,11 @@ main() {
 
     chmod +x "${tmpdir}/${BINARY_NAME}"
 
+    # Clear macOS quarantine attribute to avoid Gatekeeper killing the binary
+    if [ "$os" = "darwin" ]; then
+        xattr -c "${tmpdir}/${BINARY_NAME}" 2>/dev/null || true
+    fi
+
     info "Installing to ${install_dir}/${BINARY_NAME}..."
     if needs_sudo "$install_dir"; then
         sudo cp "${tmpdir}/${BINARY_NAME}" "${install_dir}/${BINARY_NAME}"

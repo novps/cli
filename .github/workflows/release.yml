@@ -106,6 +106,9 @@ jobs:
             --collect-submodules rich._unicode_data \
             src/novps/main.py
 
+      - name: Codesign binary (ad-hoc)
+        run: ${{ matrix.arch_prefix }} codesign --force --deep --sign - dist/${{ matrix.artifact }}
+
       - name: Verify binary
         run: |
           chmod +x dist/${{ matrix.artifact }}
