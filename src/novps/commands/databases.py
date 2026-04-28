@@ -17,17 +17,20 @@ BACKUP_TERMINAL_STATUSES = {"completed", "error"}
 REPLICA_TERMINAL_STATUSES = {"available"}
 
 app = typer.Typer(no_args_is_help=True)
-replica_app = typer.Typer(no_args_is_help=True, help="Manage read-only replicas.")
-backups_app = typer.Typer(no_args_is_help=True, help="Manage postgres backups.")
+replica_app = typer.Typer(no_args_is_help=True, help="Manage read-only replicas (postgres only).")
+backups_app = typer.Typer(no_args_is_help=True, help="Manage postgres/mysql backups.")
 pool_app = typer.Typer(no_args_is_help=True, help="Manage postgres connection pools.")
-pgdb_app = typer.Typer(no_args_is_help=True, help="Manage postgres databases inside an instance.")
-pguser_app = typer.Typer(no_args_is_help=True, help="Manage postgres users inside an instance.")
+db_app = typer.Typer(no_args_is_help=True, help="Manage logical databases inside an instance (postgres/mysql).")
+user_app = typer.Typer(no_args_is_help=True, help="Manage users inside an instance (postgres/mysql).")
 
 app.add_typer(replica_app, name="replica")
 app.add_typer(backups_app, name="backups")
 app.add_typer(pool_app, name="pool")
-app.add_typer(pgdb_app, name="pg-db")
-app.add_typer(pguser_app, name="pg-user")
+app.add_typer(db_app, name="db")
+app.add_typer(user_app, name="user")
+# Backwards-compat aliases for the previous postgres-only naming.
+app.add_typer(db_app, name="pg-db", hidden=True)
+app.add_typer(user_app, name="pg-user", hidden=True)
 
 DATABASE_COLUMNS = [
     ("id", "ID"),
@@ -347,29 +350,33 @@ def get_database(
 
 @app.command("create")
 def create_database(
-    engine: str = typer.Option(..., "--engine", "-e", help="Database engine: postgres or redis."),
+    engine: str = typer.Option(..., "--engine", "-e", help="Database engine: postgres, mysql, or redis."),
     size: str = typer.Option(..., "--size", "-s", help="Node size: xs, sm, md, lg, xl."),
     count: int = typer.Option(1, "--count", "-n", help="Node count (1-3)."),
     postgres_version: str = typer.Option("16", "--postgres-version", help="Postgres version: 14, 15, 16."),
+    mysql_version: str = typer.Option("8.0", "--mysql-version", help="MySQL version: 8.0."),
     wait: bool = typer.Option(False, "--wait", "-w", help="Wait until the database becomes ready."),
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
     """Create a new database."""
-    if engine not in ("postgres", "redis"):
-        typer.echo("Error: --engine must be 'postgres' or 'redis'", err=True)
+    if engine not in ("postgres", "mysql", "redis"):
+        typer.echo("Error: --engine must be 'postgres', 'mysql', or 'redis'", err=True)
         raise typer.Exit(code=1)
     if size not in ("xs", "sm", "md", "lg", "xl"):
         typer.echo("Error: --size must be one of: xs, sm, md, lg, xl", err=True)
         raise typer.Exit(code=1)
 
     client = get_client(project)
-    payload = {
+    payload: dict[str, Any] = {
         "engine": engine,
         "node_type": size,
         "node_count": count,
-        "postgres_version": postgres_version,
     }
+    if engine == "postgres":
+        payload["postgres_version"] = postgres_version
+    elif engine == "mysql":
+        payload["mysql_version"] = mysql_version
     resp = client.post("/databases", data=payload)
     data = resp.get("data", {})
 
@@ -757,34 +764,34 @@ def pool_delete(
     typer.echo("Pool deleted.")
 
 
-# ── pg-db ────────────────────────────────────────────────────────────────
+# ── db (logical databases inside an instance) ───────────────────────────
 
 
 def _fetch_entries(client, database_id: str) -> dict[str, Any]:
     return client.get(f"/databases/{database_id}/entries").get("data", {})
 
 
-@pgdb_app.command("list")
-def pgdb_list(
+@db_app.command("list")
+def db_list(
     database_id: str = typer.Argument(help="Database ID."),
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
-    """List postgres databases inside an instance."""
+    """List logical databases inside an instance."""
     client = get_client(project)
     data = _fetch_entries(client, database_id)
     dbs = data.get("databases", [])
-    output(dbs, PGDB_COLUMNS, title="Postgres Databases", as_json=json)
+    output(dbs, PGDB_COLUMNS, title="Databases", as_json=json)
 
 
-@pgdb_app.command("create")
-def pgdb_create(
+@db_app.command("create")
+def db_create(
     database_id: str = typer.Argument(help="Database ID."),
     name: str = typer.Option(..., "--name", "-n", help="New database name."),
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
-    """Create a postgres database inside an instance."""
+    """Create a logical database inside an instance."""
     client = get_client(project)
     resp = client.post(f"/databases/{database_id}/databases", data={"name": name})
     data = resp.get("data", {})
@@ -794,24 +801,24 @@ def pgdb_create(
     typer.echo(f"Database created: id={data.get('id')} name={data.get('name')}")
 
 
-@pgdb_app.command("delete")
-def pgdb_delete(
+@db_app.command("delete")
+def db_delete(
     database_id: str = typer.Argument(help="Database ID."),
-    entry_id: str = typer.Argument(help="Postgres database entry ID."),
+    entry_id: str = typer.Argument(help="Database entry ID."),
     force: bool = typer.Option(False, "--force", help="Skip the typed confirmation."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
-    """Delete a postgres database inside an instance."""
+    """Delete a logical database inside an instance."""
     _confirm_delete(
-        f"This will permanently delete postgres database {entry_id}.",
+        f"This will permanently delete database {entry_id}.",
         force=force,
     )
     client = get_client(project)
     client.delete(f"/databases/{database_id}/databases/{entry_id}")
-    typer.echo("Postgres database deleted.")
+    typer.echo("Database deleted.")
 
 
-# ── pg-user ──────────────────────────────────────────────────────────────
+# ── user (users inside an instance) ─────────────────────────────────────
 
 
 def _format_grants(permissions: list[dict[str, Any]]) -> str:
@@ -820,14 +827,14 @@ def _format_grants(permissions: list[dict[str, Any]]) -> str:
     return ", ".join(f"{p.get('database')}={p.get('permissions')}" for p in permissions)
 
 
-@pguser_app.command("list")
-def pguser_list(
+@user_app.command("list")
+def user_list(
     database_id: str = typer.Argument(help="Database ID."),
     show_password: bool = typer.Option(False, "--show-password", help="Show user passwords in clear."),
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
-    """List postgres users inside an instance."""
+    """List users inside an instance."""
     client = get_client(project)
     data = _fetch_entries(client, database_id)
     users = data.get("users", [])
@@ -836,7 +843,7 @@ def pguser_list(
         print_json(users)
         return
 
-    table = Table(title="Postgres Users")
+    table = Table(title="Users")
     table.add_column("ID")
     table.add_column("Name")
     table.add_column("Password")
@@ -868,8 +875,8 @@ def _parse_grant(value: str) -> dict[str, str]:
     return {"database": dbname, "permissions": perm}
 
 
-@pguser_app.command("create")
-def pguser_create(
+@user_app.command("create")
+def user_create(
     database_id: str = typer.Argument(help="Database ID."),
     name: str = typer.Option(..., "--name", "-n", help="New user name."),
     grants: list[str] = typer.Option(
@@ -879,7 +886,7 @@ def pguser_create(
     json: bool = typer.Option(False, "--json", help="Output as JSON."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
-    """Create a postgres user (password is generated and shown in the output)."""
+    """Create a user (password is generated and shown in the output)."""
     permissions = [_parse_grant(g) for g in grants]
     client = get_client(project)
     resp = client.post(
@@ -898,18 +905,18 @@ def pguser_create(
         typer.echo(f"Grants: {_format_grants(perms)}")
 
 
-@pguser_app.command("delete")
-def pguser_delete(
+@user_app.command("delete")
+def user_delete(
     database_id: str = typer.Argument(help="Database ID."),
-    entry_id: str = typer.Argument(help="Postgres user entry ID."),
+    entry_id: str = typer.Argument(help="User entry ID."),
     force: bool = typer.Option(False, "--force", help="Skip the typed confirmation."),
     project: str = typer.Option("default", "--project", "-p", help="Project alias."),
 ) -> None:
-    """Delete a postgres user."""
+    """Delete a user."""
     _confirm_delete(
-        f"This will permanently delete postgres user {entry_id}.",
+        f"This will permanently delete user {entry_id}.",
         force=force,
     )
     client = get_client(project)
     client.delete(f"/databases/{database_id}/users/{entry_id}")
-    typer.echo("Postgres user deleted.")
+    typer.echo("User deleted.")

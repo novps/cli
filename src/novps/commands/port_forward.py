@@ -21,6 +21,14 @@ WS_CLOSE_MESSAGES: dict[int, str] = {
     CloseCode.INTERNAL_ERROR: "Remote server encountered an internal error.",
 }
 
+# Default local listener ports per engine. Matches the engine's well-known port so
+# clients (psql/mysql/redis-cli/DataGrip) connect with their expected defaults.
+DEFAULT_LOCAL_PORTS: dict[str, int] = {
+    "postgres": 5432,
+    "mysql": 3306,
+    "redis": 6379,
+}
+
 
 @app.command("resource")
 def forward_resource(
@@ -52,6 +60,23 @@ def _obtain_ticket(target_type: str, target_id: str, remote_port: int | None, pr
     return resp.get("data", {})
 
 
+def _resolve_database_local_port(target_id: str, project: str) -> int:
+    """Look up a database's engine to pick a sensible default local port without
+    burning a one-shot port-forward ticket."""
+    client = get_client(project)
+    resp = client.get(f"/databases/{target_id}")
+    engine = (resp.get("data") or {}).get("engine")
+    port = DEFAULT_LOCAL_PORTS.get(engine)
+    if port is None:
+        typer.echo(
+            f"Error: cannot pick a default local port for engine '{engine}'. "
+            f"Pass --local-port explicitly.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    return port
+
+
 def _run_port_forward(
     target_type: str,
     target_id: str,
@@ -60,9 +85,10 @@ def _run_port_forward(
     project: str = "default",
 ) -> None:
     if local_port is None:
-        # Request a ticket to determine the port from the server (databases)
-        data = _obtain_ticket(target_type, target_id, remote_port, project)
-        local_port = data.get("port", remote_port)
+        if target_type == "database":
+            local_port = _resolve_database_local_port(target_id, project)
+        else:
+            local_port = remote_port
         if local_port is None:
             typer.echo("Error: could not determine local port.", err=True)
             raise typer.Exit(code=1)
